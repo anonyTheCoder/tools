@@ -23,8 +23,8 @@ This script is provided **strictly for educational purposes** only.
 1. **Clone the repository**
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/telegram-report-tool.git
-cd telegram-report-tool
+git clone https://github.com/YOUR_USERNAME/tools
+cd tools/massReporting
 ```
 
 2. **Install dependencies**
