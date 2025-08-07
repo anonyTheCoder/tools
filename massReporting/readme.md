@@ -50,7 +50,7 @@ pip install -r requirements.txt
 ## ▶️ Usage
 
 ```bash
-python3 your_script_name.py
+python3 massReporting.py
 ```
 
 Then follow the prompts:
@@ -71,6 +71,3 @@ Then follow the prompts:
 
 ---
 
-## 📜 License
-
-MIT License – Free to use with proper credit. Not responsible for misuse.
