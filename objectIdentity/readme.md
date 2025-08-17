@@ -22,7 +22,7 @@ It balances **speed** and **accuracy** by using the `yolov8s.pt` model, frame sk
   - ultralytics
   - opencv-python
   - torch
-
+ 
 ---
 
 ## ⚙️ Installation
