@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Voice-to-Text Converter</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<style>
+  body{font-family:system-ui;background:#f3f5f7;display:flex;flex-direction:column;align-items:center;padding:2rem}
+  h1{margin:0 0 1rem;font-size:1.5rem;color:#333}
+  .btn{font-size:1rem;padding:.6rem 1.2rem;margin:.3rem;border:none;border-radius:6px;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  #startBtn{background:#0077ff;color:#fff}#stopBtn{background:#ff3b30;color:#fff}#copyBtn{background:#34c759;color:#fff}
+  #output{width:100%;max-width:600px;min-height:150px;margin-top:1rem;padding:.8rem;font-size:1rem;border:1px solid #ccc;border-radius:6px;resize:vertical}
+  #status{margin-top:.5rem;font-size:.9rem;color:#555}
+</style>
+</head>
+<body>
+  <h1>🎤 Voice-to-Text Converter</h1>
+  <div>
+    <button id="startBtn" class="btn">Start Listening</button>
+    <button id="stopBtn"  class="btn" disabled>Stop Listening</button>
+    <button id="copyBtn"  class="btn">Copy Text</button>
+  </div>
+  <textarea id="output" placeholder="Your speech will appear here…" readonly></textarea>
+  <p id="status">
+    <span id="statusText">Click “Start Listening” to begin.</span>
+    <span id="permWarn" style="display:none;color:red;"> ⚠️ HTTPS or localhost required for microphone access.</span>
+  </p>
+
+  <script>
+(() => {
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+    document.getElementById('permWarn').style.display = 'inline';
+  }
+
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    document.getElementById('statusText').textContent = '❌ Web Speech API not supported.';
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn  = document.getElementById('stopBtn');
+  const copyBtn  = document.getElementById('copyBtn');
+  const output   = document.getElementById('output');
+  const statusText = document.getElementById('statusText');
+
+  let finalTranscript = '';
+  let listening = false; // track if user wants listening
+
+  recognition.onstart = () => {
+    statusText.textContent = '🔴 Listening…';
+    startBtn.disabled = true;
+    stopBtn.disabled  = false;
+    listening = true;
+  };
+
+  recognition.onend = () => {
+    startBtn.disabled = false;
+    stopBtn.disabled  = true;
+    if (listening) {
+      // Auto-restart if user didn’t press stop
+      recognition.start();
+    } else {
+      statusText.textContent = 'Stopped.';
+    }
+  };
+
+  recognition.onerror = e => {
+    statusText.textContent = `Error: ${e.error}`;
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    if (e.error === 'not-allowed') {
+      statusText.textContent += ' (Microphone permission denied)';
+    }
+  };
+
+  recognition.onresult = e => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; ++i) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) finalTranscript += t + ' ';
+      else interim += t;
+    }
+    output.value = finalTranscript + interim;
+  };
+
+  startBtn.addEventListener('click', () => {
+    finalTranscript = '';
+    listening = true;
+    recognition.start();
+  });
+
+  stopBtn.addEventListener('click', () => {
+    listening = false;
+    recognition.stop();
+  });
+
+  copyBtn.addEventListener('click', () => {
+    output.select();
+    document.execCommand('copy');
+    statusText.textContent = '✅ Copied!';
+    setTimeout(() => statusText.textContent = 'Ready', 1500);
+  });
+})();
+</script>
+
+
+
+<!-- <script>
+(() => {
+  // Warn if not https or localhost
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+    document.getElementById('permWarn').style.display = 'inline';
+  }
+
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    document.getElementById('statusText').textContent = '❌ Web Speech API not supported.';
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn  = document.getElementById('stopBtn');
+  const copyBtn  = document.getElementById('copyBtn');
+  const output   = document.getElementById('output');
+  const statusText = document.getElementById('statusText');
+
+  let finalTranscript = '';
+
+  recognition.onstart = () => {
+    statusText.textContent = '🔴 Listening…';
+    startBtn.disabled = true;
+    stopBtn.disabled  = false;
+  };
+
+  recognition.onend = () => {
+    statusText.textContent = 'Stopped.';
+    startBtn.disabled = false;
+    stopBtn.disabled  = true;
+  };
+
+  recognition.onerror = e => {
+    statusText.textContent = `Error: ${e.error}`;
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    // Chrome often fires "not-allowed" once if permission prompt is dismissed
+    if (e.error === 'not-allowed') {
+      statusText.textContent += ' (Microphone permission denied)';
+    }
+  };
+
+  recognition.onresult = e => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; ++i) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) finalTranscript += t + ' ';
+      else interim += t;
+    }
+    output.value = finalTranscript + interim;
+  };
+
+  startBtn.addEventListener('click', () => recognition.start());
+  stopBtn.addEventListener('click',  () => recognition.stop());
+
+  copyBtn.addEventListener('click', () => {
+    output.select();
+    document.execCommand('copy');
+    statusText.textContent = '✅ Copied!';
+    setTimeout(() => statusText.textContent = 'Ready', 1500);
+  });
+})();
+</script> -->
+</body>
+</html>
